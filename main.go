@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,23 +10,43 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fakhripraya/general-service/config"
 	"github.com/fakhripraya/general-service/data"
 	"github.com/fakhripraya/general-service/entities"
+	"github.com/fakhripraya/general-service/handlers"
+	gohandlers "github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/hashicorp/go-hclog"
 	"github.com/joho/godotenv"
-
-	socketio "github.com/googollee/go-socket.io"
-	gohandlers "github.com/gorilla/handlers"
+	"github.com/srinathgs/mysqlstore"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 var err error
 
+// Session Store based on MYSQL database
+var sessionStore *mysqlstore.MySQLStore
+
+// Adapter is an alias
+type Adapter func(http.Handler) http.Handler
+
+// Adapt takes Handler funcs and chains them to the main handler.
+func Adapt(handler http.Handler, adapters ...Adapter) http.Handler {
+	// The loop is reversed so the adapters/middleware gets executed in the same
+	// order as provided in the array.
+	for i := len(adapters); i > 0; i-- {
+		handler = adapters[i-1](handler)
+	}
+	return handler
+}
+
 func main() {
+
+	// creates a structured logger for logging the entire program
 	logger := hclog.Default()
 
 	// load configuration from env file
-	logger.Info("Loading env")
 	err = godotenv.Load(".env")
 
 	if err != nil {
@@ -36,7 +55,6 @@ func main() {
 	}
 
 	// Initialize app configuration
-	logger.Info("Initialize application configuration")
 	var appConfig entities.Configuration
 	err = data.ConfigInit(&appConfig)
 
@@ -45,41 +63,36 @@ func main() {
 		log.Fatal(err)
 	}
 
-	newServer := socketio.NewServer(nil)
+	// initialize db session based on dialector
+	logger.Info("Establishing database connection on " + appConfig.Database.Host + ":" + strconv.Itoa(appConfig.Database.Port))
+	config.DB, err = gorm.Open(mysql.Open(config.DbURL(config.BuildDBConfig(&appConfig.Database))), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	newServer.OnConnect("/", func(s socketio.Conn) error {
-		s.SetContext("")
-		fmt.Println("connected:", s.ID())
-		return nil
-	})
+	// Open the database connection based on the initialized db session
+	mySQLDB, err := config.DB.DB()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	newServer.OnEvent("/", "notice", func(s socketio.Conn, msg string) {
-		fmt.Println("notice:", msg)
-		s.Emit("reply", "have "+msg)
-	})
+	defer mySQLDB.Close()
 
-	newServer.OnEvent("/chat", "msg", func(s socketio.Conn, msg string) string {
-		s.SetContext(msg)
-		return "recv " + msg
-	})
+	// Creates a session store based on MYSQL database
+	// If table doesn't exist, creates a new one
+	logger.Info("Building session store based on " + appConfig.Database.Host + ":" + strconv.Itoa(appConfig.Database.Port))
+	sessionStore, err = mysqlstore.NewMySQLStore(config.DbURL(config.BuildDBConfig(&appConfig.Database)), "dbMasterSession", "/", 3600*24*7, []byte(appConfig.MySQLStore.Secret))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	newServer.OnEvent("/", "bye", func(s socketio.Conn) string {
-		last := s.Context().(string)
-		s.Emit("bye", last)
-		s.Close()
-		return last
-	})
+	defer sessionStore.Close()
 
-	newServer.OnError("/", func(s socketio.Conn, e error) {
-		fmt.Println("meet error:", e)
-	})
+	// creates a chat instance
+	chat := data.NewChat(logger)
 
-	newServer.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		fmt.Println("closed", reason)
-	})
-
-	go newServer.Serve()
-	defer newServer.Close()
+	// creates the chat handler
+	chatHandler := handlers.NewChatHandler(logger, chat, sessionStore)
 
 	// creates a new serve mux
 	serveMux := mux.NewRouter()
@@ -87,8 +100,17 @@ func main() {
 	// handlers for the API
 	logger.Info("Setting handlers for the API")
 
-	serveMux.Handle("/socket.io/", newServer)
-	serveMux.Handle("/", http.FileServer(http.Dir("./asset")))
+	// get handlers
+	getRequest := serveMux.Methods(http.MethodGet).Subrouter()
+
+	// get kost handlers
+	getRequest.HandleFunc("/{user_id:[0-9]+}/all", Adapt(
+		http.HandlerFunc(chatHandler.GetRoomList),
+		chatHandler.MiddlewareParseUserGetRequest,
+	).ServeHTTP)
+
+	// get global middleware
+	getRequest.Use(chatHandler.MiddlewareValidateAuth)
 
 	// CORS
 	corsHandler := gohandlers.CORS(gohandlers.AllowedOrigins([]string{"*"}))
