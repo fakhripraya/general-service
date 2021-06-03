@@ -126,3 +126,30 @@ func (chatHandler *ChatHandler) MiddlewareParseUserGetRequest(next http.Handler)
 		next.ServeHTTP(rw, r)
 	})
 }
+
+// MiddlewareParseChatRequest parses the currently logged in user payload from the query parameter
+func (chatHandler *ChatHandler) MiddlewareParseChatRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+
+		// validate content type to be application/json
+		rw.Header().Add("Content-Type", "application/json")
+
+		requestChatRoom := &entities.RequestChatRoom{}
+
+		// parse the request body to the given instance
+		err := data.FromJSON(requestChatRoom, r.Body)
+		if err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			data.ToJSON(&GenericError{Message: err.Error()}, rw)
+
+			return
+		}
+
+		// add the chats to the context
+		ctx := context.WithValue(r.Context(), KeyChat{}, requestChatRoom)
+		r = r.WithContext(ctx)
+
+		// Call the next handler, which can be another middleware in the chain, or the final handler.
+		next.ServeHTTP(rw, r)
+	})
+}

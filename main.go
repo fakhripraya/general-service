@@ -100,13 +100,21 @@ func main() {
 	// handlers for the API
 	logger.Info("Setting handlers for the API")
 
-	// get handlers
+	// handlers
 	getRequest := serveMux.Methods(http.MethodGet).Subrouter()
+	patchRequest := serveMux.Methods(http.MethodPatch).Subrouter()
 
-	// get kost handlers
+	// get all chats handlers
 	getRequest.HandleFunc("/{user_id:[0-9]+}/all", Adapt(
 		http.HandlerFunc(chatHandler.GetRoomList),
 		chatHandler.MiddlewareParseUserGetRequest,
+	).ServeHTTP)
+
+	// patch chat read handlers
+	patchRequest.HandleFunc("/read/{user_id:[0-9]+}", Adapt(
+		http.HandlerFunc(chatHandler.PatchReadChat),
+		chatHandler.MiddlewareParseUserGetRequest,
+		chatHandler.MiddlewareParseChatRequest,
 	).ServeHTTP)
 
 	// get global middleware

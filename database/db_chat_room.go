@@ -18,7 +18,6 @@ type DBChatRoomMembers struct {
 	ID         uint      `gorm:"primary_key;autoIncrement;not null" json:"id"`
 	RoomID     uint      `gorm:"not null" json:"room_id"`
 	UserID     uint      `gorm:"not null" json:"user_id"`
-	SocketID   uint      `gorm:"not null" json:"socket_id"`
 	IsActive   bool      `gorm:"not null;default:true" json:"is_active"`
 	Created    time.Time `gorm:"type:datetime" json:"created"`
 	CreatedBy  string    `json:"created_by"`
@@ -34,6 +33,7 @@ type DBChatRoomChats struct {
 	ChatBody   string    `json:"chat_body"`
 	Attachment byte      `json:"attachment"`
 	Pic_URL    string    `json:"pic_url"`
+	ChatRead   bool      `gorm:"not null;default:false" json:"chat_read"`
 	IsActive   bool      `gorm:"not null;default:true" json:"is_active"`
 	Created    time.Time `gorm:"type:datetime" json:"created"`
 	CreatedBy  string    `json:"created_by"`

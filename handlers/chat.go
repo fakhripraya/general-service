@@ -10,6 +10,9 @@ import (
 // KeyUser is a key used for the User object in the context
 type KeyUser struct{}
 
+// KeyChat is a key used for the User object in the context
+type KeyChat struct{}
+
 // ChatHandler is a handler struct for chat changes
 type ChatHandler struct {
 	logger hclog.Logger

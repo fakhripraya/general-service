@@ -44,3 +44,10 @@ type ChatRoomChats struct {
 	Modified   time.Time `json:"modified"`
 	ModifiedBy string    `json:"modified_by"`
 }
+
+// create the requested chat room to communicate with the client side request
+type RequestChatRoom struct {
+	ChatRoom        ChatRoom          `json:"chat_room"`
+	ChatRoomChats   []ChatRoomChats   `json:"chat_room_chats"`
+	ChatRoomMembers []ChatRoomMembers `json:"chat_room_members"`
+}
