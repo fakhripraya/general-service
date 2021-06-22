@@ -46,12 +46,14 @@ func (chatHandler *ChatHandler) GetRoomList(rw http.ResponseWriter, r *http.Requ
 				return
 			}
 
-			var chatRoomLastChat database.DBChatRoomChats
+			var chatRoomLastChat = &database.DBChatRoomChats{}
 			if err := config.DB.Where("room_id = ?", chatRoom.ID).Last(&chatRoomLastChat).Error; err != nil {
-				rw.WriteHeader(http.StatusBadRequest)
-				data.ToJSON(&GenericError{Message: err.Error()}, rw)
+				if err.Error() != "record not found" {
+					rw.WriteHeader(http.StatusBadRequest)
+					data.ToJSON(&GenericError{Message: err.Error()}, rw)
 
-				return
+					return
+				}
 			}
 
 			var chatRoomLastChatUnread []database.DBChatRoomChats
@@ -77,7 +79,7 @@ func (chatHandler *ChatHandler) GetRoomList(rw http.ResponseWriter, r *http.Requ
 
 			finalResult = append(finalResult, CustomGetRoomType{
 				ChatRoom:         chatRoom,
-				ChatRoomLastChat: chatRoomLastChat,
+				ChatRoomLastChat: *chatRoomLastChat,
 				ChatRoomMembers:  chatRoomMembers,
 				UnreadCount:      len(chatRoomLastChatUnread),
 			})
